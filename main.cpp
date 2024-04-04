@@ -1,6 +1,8 @@
 #include <DHT.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <WebServer.h>
+#include <time.h>
 
 #define DHTPIN 4
 #define DHTTYPE DHT22
@@ -14,6 +16,8 @@ float minTemp = 20.0;
 float maxTemp = 26.0;
 
 DHT dht(DHTPIN, DHTTYPE);
+WebServer server(80);
+String dataLog = "";
 
 void sendAlert(String message) {
   // sending telegram alert when temp is out of range
@@ -22,6 +26,42 @@ void sendAlert(String message) {
   http.begin(url);
   http.GET();
   http.end();
+}
+
+String getTime() {
+  // getting current time for logs
+  time_t now = time(nullptr);
+  struct tm* t = localtime(&now);
+  char buf[30];
+  strftime(buf, sizeof(buf), "%Y-%m-%d %H:%M:%S", t);
+  return String(buf);
+}
+
+void handleRoot() {
+  float temp = dht.readTemperature();
+  float hum = dht.readHumidity();
+  String status = (temp > maxTemp || temp < minTemp) ? "ALERT" : "SAFE";
+
+  // building the webpage
+  String html = "<html><head><title>Cold Chain Monitor</title>";
+  html += "<meta http-equiv='refresh' content='5'>";
+  html += "<style>body{font-family:Arial;background:#0a0a0a;color:white;padding:20px}";
+  html += "h1{color:#21ff7b}.card{background:#1a1a1a;border-radius:10px;padding:20px;margin:10px 0}";
+  html += ".alert{color:#ff4444;font-weight:bold}.safe{color:#21ff7b}";
+  html += "table{width:100%;border-collapse:collapse}";
+  html += "th,td{padding:10px;border:1px solid #333;text-align:left}";
+  html += "th{background:#21ff7b22;color:#21ff7b}</style></head><body>";
+  html += "<h1>Cold Chain Monitor</h1>";
+  html += "<div class='card'><h2>Live Reading</h2>";
+  html += "<p>Temperature: <b>" + String(temp) + " C</b></p>";
+  html += "<p>Humidity: <b>" + String(hum) + " %</b></p>";
+  html += "<p>Time: " + getTime() + "</p>";
+  html += "<p class='" + String(temp > maxTemp || temp < minTemp ? "alert" : "safe") + "'>" + status + "</p></div>";
+  html += "<div class='card'><h2>Log</h2><table>";
+  html += "<tr><th>Time</th><th>Temp</th><th>Humidity</th><th>Status</th></tr>";
+  html += dataLog + "</table></div></body></html>";
+
+  server.send(200, "text/html", html);
 }
 
 void setup() {
@@ -34,30 +74,37 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-  Serial.println(" Connected!");
+  Serial.println(" Connected! Open: http://" + WiFi.localIP().toString());
+  configTime(19800, 0, "pool.ntp.org");
+  delay(2000);
+
+  server.on("/", handleRoot);
+  server.begin();
 }
 
 void loop() {
-  delay(10000);
+  server.handleClient();
 
-  // asking dht22 for readings
-  float temp = dht.readTemperature();
-  float hum = dht.readHumidity();
+  static unsigned long lastRead = 0;
+  if (millis() - lastRead >= 10000) {
+    lastRead = millis();
 
-  Serial.print("Temp: ");
-  Serial.print(temp);
-  Serial.print("C | Humidity: ");
-  Serial.print(hum);
-  Serial.println("%");
+    float temp = dht.readTemperature();
+    float hum = dht.readHumidity();
+    String status = "";
 
-  // check if temp is out of safe range
-  if (temp > maxTemp) {
-    Serial.println("ALERT: Temp too HIGH!");
-    sendAlert("ALERT! Temp too HIGH: " + String(temp) + "C");
-  } else if (temp < minTemp) {
-    Serial.println("ALERT: Temp too LOW!");
-    sendAlert("ALERT! Temp too LOW: " + String(temp) + "C");
-  } else {
-    Serial.println("Temp is safe.");
+    if (temp > maxTemp) {
+      status = "TOO HIGH";
+      sendAlert("ALERT! Temp too HIGH: " + String(temp) + "C at " + getTime());
+    } else if (temp < minTemp) {
+      status = "TOO LOW";
+      sendAlert("ALERT! Temp too LOW: " + String(temp) + "C at " + getTime());
+    } else {
+      status = "SAFE";
+    }
+
+    // saving reading to log
+    dataLog += "<tr><td>" + getTime() + "</td><td>" + String(temp) + "C</td><td>" + String(hum) + "%</td><td>" + status + "</td></tr>";
+    Serial.println(getTime() + " | Temp: " + String(temp) + " | Hum: " + String(hum) + " | " + status);
   }
 }
