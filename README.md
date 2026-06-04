@@ -28,3 +28,9 @@ I built this as a low cost IoT solution that anyone can set up with basic hardwa
 
 ## Built by
 Gauresh Pathak — Electronics and Telecommunication Engineering Student, Mumbai
+
+## Future Improvements
+- Add cloud storage using Firebase
+- Mobile app for remote monitoring
+- Support for multiple storage units
+- Battery backup with solar charging
