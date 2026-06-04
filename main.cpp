@@ -19,8 +19,26 @@ DHT dht(DHTPIN, DHTTYPE);
 WebServer server(80);
 String dataLog = "";
 
+void reconnectWifi() {
+  // retry wifi if disconnected
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("WiFi lost! Reconnecting...");
+    WiFi.begin(ssid, password);
+    int attempts = 0;
+    while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+      delay(500);
+      Serial.print(".");
+      attempts++;
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      Serial.println("Reconnected!");
+    } else {
+      Serial.println("Reconnection failed.");
+    }
+  }
+}
+
 void sendAlert(String message) {
-  // sending telegram alert when temp is out of range
   HTTPClient http;
   String url = "https://api.callmebot.com/text.php?user=" + String(telegramUsername) + "&apikey=" + String(apiKey) + "&text=" + message;
   http.begin(url);
@@ -29,7 +47,6 @@ void sendAlert(String message) {
 }
 
 String getTime() {
-  // getting current time for logs
   time_t now = time(nullptr);
   struct tm* t = localtime(&now);
   char buf[30];
@@ -40,9 +57,8 @@ String getTime() {
 void handleRoot() {
   float temp = dht.readTemperature();
   float hum = dht.readHumidity();
-  String status = (temp > maxTemp || temp < minTemp) ? "ALERT" : "SAFE";
+  String status = (temp > maxTemp || temp < minTemp) ? "🚨 ALERT" : "✅ SAFE";
 
-  // building the webpage
   String html = "<html><head><title>Cold Chain Monitor</title>";
   html += "<meta http-equiv='refresh' content='5'>";
   html += "<style>body{font-family:Arial;background:#0a0a0a;color:white;padding:20px}";
@@ -51,9 +67,9 @@ void handleRoot() {
   html += "table{width:100%;border-collapse:collapse}";
   html += "th,td{padding:10px;border:1px solid #333;text-align:left}";
   html += "th{background:#21ff7b22;color:#21ff7b}</style></head><body>";
-  html += "<h1>Cold Chain Monitor</h1>";
+  html += "<h1>🌡️ Cold Chain Monitor</h1>";
   html += "<div class='card'><h2>Live Reading</h2>";
-  html += "<p>Temperature: <b>" + String(temp) + " C</b></p>";
+  html += "<p>Temperature: <b>" + String(temp) + " °C</b></p>";
   html += "<p>Humidity: <b>" + String(hum) + " %</b></p>";
   html += "<p>Time: " + getTime() + "</p>";
   html += "<p class='" + String(temp > maxTemp || temp < minTemp ? "alert" : "safe") + "'>" + status + "</p></div>";
@@ -74,7 +90,7 @@ void setup() {
     delay(500);
     Serial.print(".");
   }
-  Serial.println(" Connected! Open: http://" + WiFi.localIP().toString());
+  Serial.println("\nConnected! Open: http://" + WiFi.localIP().toString());
   configTime(19800, 0, "pool.ntp.org");
   delay(2000);
 
@@ -83,6 +99,7 @@ void setup() {
 }
 
 void loop() {
+  reconnectWifi();
   server.handleClient();
 
   static unsigned long lastRead = 0;
@@ -103,8 +120,7 @@ void loop() {
       status = "SAFE";
     }
 
-    // saving reading to log
     dataLog += "<tr><td>" + getTime() + "</td><td>" + String(temp) + "C</td><td>" + String(hum) + "%</td><td>" + status + "</td></tr>";
-    Serial.println(getTime() + " | Temp: " + String(temp) + " | Hum: " + String(hum) + " | " + status);
+    Serial.println(getTime() + " | Temp: " + String(temp) + " | Humidity: " + String(hum) + " | " + status);
   }
 }
